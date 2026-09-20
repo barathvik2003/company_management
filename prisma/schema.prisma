@@ -1,0 +1,287 @@
+// Company Management & Performance Monitoring System
+// PHASE 1 SCHEMA: company, departments, RBAC, users, employees, audit.
+// Later phases add sales, customers, projects and finance in their own migrations.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------- enums
+
+enum CompanyStatus {
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+enum DepartmentStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum UserStatus {
+  INVITED
+  ACTIVE
+  SUSPENDED
+  DEACTIVATED
+}
+
+enum EmploymentStatus {
+  PROBATION
+  PERMANENT
+  CONTRACT
+  INTERN
+  RESIGNED
+  TERMINATED
+}
+
+/// Scope decides WHICH ROWS a permission applies to.
+/// OWN = only the caller's own records.
+/// DEPARTMENT = records in departments the caller manages.
+/// COMPANY = every record in the caller's company.
+enum PermissionScope {
+  OWN
+  DEPARTMENT
+  COMPANY
+}
+
+enum AuditAction {
+  LOGIN
+  LOGIN_FAILED
+  LOGOUT
+  CREATE
+  UPDATE
+  DELETE
+  PASSWORD_CHANGE
+  ROLE_CHANGE
+  STATUS_CHANGE
+}
+
+// ---------------------------------------------------------------- tenancy
+
+model Company {
+  id        String        @id @default(uuid()) @db.Uuid
+  name      String
+  code      String        @unique
+  address   String?
+  phone     String?
+  email     String?
+  website   String?
+  timezone  String        @default("Asia/Kolkata")
+  currency  String        @default("INR")
+  status    CompanyStatus @default(ACTIVE)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  departments Department[]
+  users       User[]
+  auditLogs   AuditLog[]
+  settings    SystemSetting[]
+
+  @@index([status])
+  @@map("companies")
+}
+
+model Department {
+  id          String           @id @default(uuid()) @db.Uuid
+  companyId   String           @db.Uuid
+  name        String
+  code        String
+  description String?
+  managerId   String?          @db.Uuid
+  status      DepartmentStatus @default(ACTIVE)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  createdById String?          @db.Uuid
+  updatedById String?          @db.Uuid
+
+  company   Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  manager   User?             @relation("DepartmentManager", fields: [managerId], references: [id], onDelete: SetNull)
+  employees EmployeeProfile[]
+
+  @@unique([companyId, code])
+  @@index([companyId, status])
+  @@index([managerId])
+  @@map("departments")
+}
+
+// ---------------------------------------------------------------- rbac
+
+model Role {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique
+  label       String
+  description String?
+  isSystem    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  permissions RolePermission[]
+  users       UserRole[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id       String @id @default(uuid()) @db.Uuid
+  /// Verb-on-resource, e.g. "employee:read", "sale:create".
+  key      String @unique
+  resource String
+  action   String
+  label    String
+
+  roles RolePermission[]
+
+  @@index([resource])
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String          @db.Uuid
+  permissionId String          @db.Uuid
+  scope        PermissionScope @default(OWN)
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  userId     String   @db.Uuid
+  roleId     String   @db.Uuid
+  assignedAt DateTime @default(now())
+  assignedBy String?  @db.Uuid
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@index([roleId])
+  @@map("user_roles")
+}
+
+// ---------------------------------------------------------------- identity
+
+model User {
+  id                 String     @id @default(uuid()) @db.Uuid
+  companyId          String     @db.Uuid
+  email              String     @unique
+  /// bcrypt hash. Never selected into any API response.
+  passwordHash       String
+  firstName          String
+  lastName           String
+  phone              String?
+  status             UserStatus @default(ACTIVE)
+  lastLoginAt        DateTime?
+  /// Bumped on password change or forced logout; invalidates old refresh tokens.
+  tokenVersion       Int        @default(0)
+  mustChangePassword Boolean    @default(false)
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+  createdById        String?    @db.Uuid
+  updatedById        String?    @db.Uuid
+
+  company            Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  roles              UserRole[]
+  employeeProfile    EmployeeProfile?
+  managesDepartments Department[]      @relation("DepartmentManager")
+  directReports      EmployeeProfile[] @relation("ReportsTo")
+  refreshTokens      RefreshToken[]
+  auditLogs          AuditLog[]
+
+  @@index([companyId, status])
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  /// SHA-256 of the token. The raw token only ever lives in the client cookie.
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  userAgent String?
+  ipAddress String?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+model EmployeeProfile {
+  id               String           @id @default(uuid()) @db.Uuid
+  userId           String           @unique @db.Uuid
+  companyId        String           @db.Uuid
+  /// Human-facing staff number, e.g. PI-0042.
+  employeeCode     String
+  departmentId     String?          @db.Uuid
+  designation      String?
+  reportsToId      String?          @db.Uuid
+  joiningDate      DateTime?
+  employmentStatus EmploymentStatus @default(PERMANENT)
+  location         String?
+  dateOfBirth      DateTime?
+  emergencyContact String?
+  notes            String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  reportsTo  User?       @relation("ReportsTo", fields: [reportsToId], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, employeeCode])
+  @@index([companyId, departmentId])
+  @@index([reportsToId])
+  @@map("employee_profiles")
+}
+
+// ---------------------------------------------------------------- platform
+
+model AuditLog {
+  id         String      @id @default(uuid()) @db.Uuid
+  companyId  String?     @db.Uuid
+  actorId    String?     @db.Uuid
+  actorEmail String?
+  action     AuditAction
+  entity     String
+  entityId   String?
+  summary    String
+  /// Redacted before write: never contains passwords, tokens or secrets.
+  metadata   Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime    @default(now())
+
+  company Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  actor   User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, createdAt])
+  @@index([actorId])
+  @@index([entity, entityId])
+  @@map("audit_logs")
+}
+
+model SystemSetting {
+  id        String   @id @default(uuid()) @db.Uuid
+  companyId String   @db.Uuid
+  key       String
+  value     Json
+  updatedAt DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, key])
+  @@map("system_settings")
+}

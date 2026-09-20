@@ -1,0 +1,56 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+.npm/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Build output
+dist/
+build/
+.next/
+out/
+coverage/
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Runtime / temporary
+.tmp/
+temp/
+tmp/
+.cache/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Testing
+.nyc_output/
+
+# Prisma local/runtime
+*.db
+*.db-journal
+
+# Certificates / private keys
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Local backups
+*.bak
+*.backup
+
+# Misc
+*.swp
+*.swo

@@ -1,0 +1,47 @@
+@import url('https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600;700&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-canvas text-ink font-sans antialiased;
+  }
+  /* Figures line up in columns when they share a width. */
+  table, .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+  :focus-visible {
+    @apply outline-none ring-2 ring-accent ring-offset-2 ring-offset-canvas;
+  }
+}
+
+@layer components {
+  .panel {
+    @apply bg-surface border border-line rounded-card;
+  }
+  .field-label {
+    @apply block text-sm font-medium text-ink mb-1.5;
+  }
+  .field-input {
+    @apply w-full rounded-card border border-line bg-surface px-3 py-2 text-[0.95rem]
+           placeholder:text-muted/70 focus:border-accent focus:outline-none
+           focus:ring-2 focus:ring-accent/25 disabled:bg-canvas disabled:text-muted;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-card px-4 py-2
+           text-sm font-semibold transition-colors disabled:opacity-60 disabled:cursor-not-allowed;
+  }
+  .btn-primary { @apply btn bg-accent text-white hover:bg-accent-strong; }
+  .btn-secondary { @apply btn border border-line bg-surface text-ink hover:bg-canvas; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

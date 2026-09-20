@@ -1,0 +1,35 @@
+# Build stage -----------------------------------------------------------------
+FROM node:20-alpine AS build
+WORKDIR /repo
+
+COPY package.json package-lock.json* tsconfig.base.json ./
+COPY packages/shared/package.json packages/shared/
+COPY apps/api/package.json apps/api/
+RUN npm install
+
+COPY prisma prisma
+COPY packages packages
+COPY apps/api apps/api
+
+RUN npx prisma generate \
+ && npm run build -w @cms/shared \
+ && npm run build -w @cms/api
+
+# Runtime stage ---------------------------------------------------------------
+FROM node:20-alpine AS runtime
+WORKDIR /app
+ENV NODE_ENV=production
+
+# Never run the application as root.
+RUN addgroup -S cms && adduser -S cms -G cms
+
+COPY --from=build /repo/node_modules ./node_modules
+COPY --from=build /repo/packages/shared/dist ./packages/shared/dist
+COPY --from=build /repo/packages/shared/package.json ./packages/shared/
+COPY --from=build /repo/apps/api/dist ./dist
+COPY --from=build /repo/apps/api/package.json ./
+COPY --from=build /repo/prisma ./prisma
+
+USER cms
+EXPOSE 3001
+CMD ["node", "dist/main.js"]
